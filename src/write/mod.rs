@@ -29,6 +29,9 @@ mod macho;
 #[cfg(feature = "pe")]
 pub mod pe;
 
+#[cfg(feature = "xcoff")]
+pub mod xcoff;
+
 mod string;
 pub use string::StringId;
 
