@@ -13,15 +13,17 @@ struct XcoffObjectWriter<'a> {
     buffer: &'a mut dyn WritableBuffer,
 
     is_64: bool,
-    symbol_table_offset: usize,
+    symbol_table_file_offset: usize,
     num_symbol_table_entry: usize,
-    string_table_offset: usize,
     string_table: StringTable<'a>,
     string_table_data: Vec<u8>,
     symbol_section: HashMap<SymbolId, XcoffSectionIndex>,
-    section_offset: HashMap<XcoffSectionIndex, usize>,
+    section_file_offset: HashMap<XcoffSectionIndex, usize>,
+    section_size: HashMap<XcoffSectionIndex, usize>,
+    section_address: HashMap<XcoffSectionIndex, u64>,
     csect_group: HashMap<XcoffSectionIndex, Vec<SectionId>>,
-    csect_offset: HashMap<SectionId, usize>,
+    csect_file_offset: HashMap<SectionId, usize>,
+    csect_address: HashMap<SectionId, u64>,
     // C_INFO symbol's offset in .info section.
     info_symbol_offset: HashMap<SymbolId, usize>,
     filenames: Vec<SymbolId>,
@@ -51,8 +53,8 @@ impl<'a> XcoffObjectWriter<'a> {
         // of the string table.
         self.string_table_data.append(&mut vec![0u8; 4]);
         self.string_table.write(4, &mut self.string_table_data);
-        let prefix_bytes = u32::to_be_bytes(self.string_table_data.len() as u32);
-        self.string_table_data[0..4].copy_from_slice(&prefix_bytes);
+        let length_field = u32::to_be_bytes(self.string_table_data.len() as u32);
+        self.string_table_data[0..4].copy_from_slice(&length_field);
     }
 
     fn layout(&mut self) -> Result<()> {
@@ -98,22 +100,33 @@ impl<'a> XcoffObjectWriter<'a> {
                 _ => {}
             }
         }
+        let mut address: u64 = 0;
         for i in (XcoffSectionIndex::Text as i32)..(XcoffSectionIndex::Info as i32 + 1) {
-            let csect_group = &self
-                .csect_group
-                .get(&(XcoffSectionIndex::from_i32(i)))
-                .unwrap();
+            let index = XcoffSectionIndex::from_i32(i);
+            let csect_group = &self.csect_group.get(&index).unwrap();
+            let section_start = address;
+            self.section_file_offset.insert(index, object_file_offset);
+            self.section_address.insert(index, address);
             for id in csect_group.iter() {
                 let section = self.object.section(*id);
                 let section_align = std::cmp::max(section.align, default_section_align);
-                object_file_offset = align(object_file_offset, section_align as usize);
-                self.csect_offset.insert(*id, object_file_offset);
-                object_file_offset += section.size as usize;
+                address = align_u64(address, section_align as u64);
+                self.csect_address.insert(*id, address);
+                if index == XcoffSectionIndex::Info {
+                    address += 4 + (section.size as u64);
+                } else {
+                    address += section.size as u64;
+                }
             }
+            address = align_u64(address, default_section_align as u64);
+            let section_size = (address - section_start) as usize;
+            self.section_size.insert(index, section_size);
+            object_file_offset += section_size;
         }
         // FIXME: Currently we only support C_INFO symbols which is a reference to
         // data stored in XCOFF's .info section. For these C_INFO symbols, we currently
         // set their visibility to SYM_V_INTERNAL.
+        self.symbol_table_file_offset = object_file_offset;
         let mut info_symbol_offset = 0;
         for (_, symbol) in self.object.symbols.iter().enumerate() {
             self.string_table.add(&symbol.name);
@@ -151,10 +164,8 @@ impl<'a> XcoffObjectWriter<'a> {
         if self.filenames.is_empty() {
             self.num_symbol_table_entry += 1;
         }
-        self.symbol_table_offset = object_file_offset;
         object_file_offset += symbol_size * self.num_symbol_table_entry;
         self.finalize_string_table();
-        self.string_table_offset = object_file_offset;
         return Ok(());
     }
 
@@ -164,7 +175,7 @@ impl<'a> XcoffObjectWriter<'a> {
                 f_magic: U16::new(BE, xcoff::MAGIC_64),
                 f_nscns: U16::new(BE, self.csect_group.len() as u16),
                 f_timdat: U32::new(BE, 0),
-                f_symptr: U64::new(BE, self.symbol_table_offset as u64),
+                f_symptr: U64::new(BE, self.symbol_table_file_offset as u64),
                 f_nsyms: U32::new(BE, self.num_symbol_table_entry as u32),
                 f_opthdr: U16::new(BE, 0),
                 f_flags: match self.object.flags {
@@ -177,7 +188,7 @@ impl<'a> XcoffObjectWriter<'a> {
                 f_magic: U16::new(BE, xcoff::MAGIC_32),
                 f_nscns: U16::new(BE, self.csect_group.len() as u16),
                 f_timdat: U32::new(BE, 0),
-                f_symptr: U32::new(BE, self.symbol_table_offset as u32),
+                f_symptr: U32::new(BE, self.symbol_table_file_offset as u32),
                 f_nsyms: U32::new(BE, self.num_symbol_table_entry as u32),
                 f_opthdr: U16::new(BE, 0),
                 f_flags: match self.object.flags {
@@ -198,13 +209,55 @@ impl<'a> XcoffObjectWriter<'a> {
         )));
     }
 
-    fn write_section_header_table(&self) -> Result<()> {
-        // FIXME: Write DwarfSection, OverflowSection and ExceptionSection.
+    fn write_section_header_table(&mut self) -> Result<()> {
+        for i in (XcoffSectionIndex::Text as i32)..(XcoffSectionIndex::Info as i32 + 1) {
+            let index = XcoffSectionIndex::from_i32(i);
+            let (s_flags, name) = match index {
+                XcoffSectionIndex::Text => (xcoff::STYP_TEXT, b".text"),
+                XcoffSectionIndex::Data => (xcoff::STYP_DATA, b".data"),
+                XcoffSectionIndex::Info => (xcoff::STYP_INFO, b".info"),
+            };
+            let mut s_name = [0u8; 8];
+            s_name.copy_from_slice(name);
+            let section_header = xcoff::SectionHeader64 {
+                s_name: s_name,
+                s_paddr: U64::new(BE, *self.section_address.get(&index).unwrap()),
+                s_vaddr: U64::new(BE, *self.section_address.get(&index).unwrap()),
+                s_size: U64::new(BE, (*self.section_size.get(&index).unwrap()) as u64),
+                s_scnptr: U64::new(BE, (*self.section_file_offset.get(&index).unwrap()) as u64),
+                s_relptr: U64::new(BE, 0),
+                s_lnnoptr: U64::new(BE, 0),
+                s_nreloc: U32::new(BE, 0),
+                s_nlnno: U32::new(BE, 0),
+                s_flags: U32::new(BE, s_flags as u32),
+                s_reserve: U32::new(BE, 0),
+            };
+            self.buffer.write(&section_header);
+        }
         return Ok(());
     }
 
-    fn write_sections(&self) -> Result<()> {
-        // FIXME: Write DwarfSection and ExceptionSection.
+    fn write_sections(&mut self) -> Result<()> {
+        for i in (XcoffSectionIndex::Text as i32)..(XcoffSectionIndex::Info as i32 + 1) {
+            let index = XcoffSectionIndex::from_i32(i);
+            let section_file_offset = *self.section_file_offset.get(&index).unwrap();
+            let section_address = *self.section_address.get(&index).unwrap();
+            debug_assert_eq!(self.buffer.len(), section_file_offset);
+            let csect_group = &self.csect_group.get(&index).unwrap();
+            for id in csect_group.iter() {
+                let section = self.object.section(*id);
+                let csect_address = self.csect_address.get(id).unwrap();
+                let csect_file_offset =
+                    section_file_offset + ((csect_address - section_address) as usize);
+                let padding = vec![0u8; csect_file_offset - self.buffer.len()];
+                self.buffer.write_bytes(&padding);
+                if index == XcoffSectionIndex::Info {
+                    let length_field = u32::to_be_bytes(section.size as u32);
+                    self.buffer.write_bytes(&length_field);
+                }
+                self.buffer.write_bytes(&section.data);
+            }
+        }
         return Ok(());
     }
 
@@ -213,11 +266,14 @@ impl<'a> XcoffObjectWriter<'a> {
     }
 
     fn write_symbol_table(&self) -> Result<()> {
+        debug_assert_eq!(self.symbol_table_file_offset, self.buffer.len());
+        if self.filenames.is_empty() {
+        } else {
+        }
         return Ok(());
     }
 
     fn write_string_table(&mut self) -> Result<()> {
-        debug_assert_eq!(self.buffer.len(), self.string_table_offset);
         self.buffer.write_bytes(&self.string_table_data);
         return Ok(());
     }
@@ -248,14 +304,16 @@ impl<'a> Object<'a> {
             buffer: buffer,
             is_64: is_64(self),
             num_symbol_table_entry: 0,
-            symbol_table_offset: 0,
-            string_table_offset: 0,
+            symbol_table_file_offset: 0,
             string_table: StringTable::default(),
             string_table_data: Vec::new(),
             csect_group: HashMap::new(),
-            csect_offset: HashMap::new(),
+            csect_file_offset: HashMap::new(),
+            csect_address: HashMap::new(),
             info_symbol_offset: HashMap::new(),
-            section_offset: HashMap::new(),
+            section_file_offset: HashMap::new(),
+            section_size: HashMap::new(),
+            section_address: HashMap::new(),
             symbol_section: HashMap::new(),
             filenames: Vec::new(),
         };
