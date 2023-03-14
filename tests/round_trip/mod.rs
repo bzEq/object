@@ -460,7 +460,8 @@ fn xcoff_powerpc() {
         Endianness::Big,
     );
     object.add_file_symbol(b".file".to_vec());
-    let csect = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
+    object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    let data = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
     object.add_symbol(write::Symbol {
         name: "rust_metadata_abcdef".into(),
         value: 0,
@@ -468,19 +469,19 @@ fn xcoff_powerpc() {
         kind: object::SymbolKind::Section,
         scope: object::SymbolScope::Dynamic,
         weak: true,
-        section: write::SymbolSection::Section(csect),
+        section: write::SymbolSection::Section(data),
         flags: object::SymbolFlags::None,
     });
-    let csect = object.add_section(Vec::new(), b".info".to_vec(), SectionKind::OtherString);
-    object.append_section_data(csect, &[0u8; 1024], 1);
+    let info = object.add_section(Vec::new(), b".info".to_vec(), SectionKind::OtherString);
+    object.append_section_data(info, &[0u8; 1024], 1);
     object.add_symbol(write::Symbol {
         name: "__aix_rust_metadata".into(),
-        value: 0,
-        size: 1024,
+        value: 4,
+        size: 0,
         kind: object::SymbolKind::Null,
         scope: object::SymbolScope::Dynamic,
         weak: true,
-        section: write::SymbolSection::Section(csect),
+        section: write::SymbolSection::Section(info),
         flags: object::SymbolFlags::None,
     });
     let bytes = object.write().unwrap();
