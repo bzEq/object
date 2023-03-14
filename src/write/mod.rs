@@ -221,6 +221,8 @@ impl<'a> Object<'a> {
             BinaryFormat::Elf => self.elf_section_info(section),
             #[cfg(feature = "macho")]
             BinaryFormat::MachO => self.macho_section_info(section),
+            #[cfg(feature = "xcoff")]
+            BinaryFormat::Xcoff => self.xcoff_section_info(section),
             _ => unimplemented!(),
         }
     }
@@ -577,6 +579,8 @@ impl<'a> Object<'a> {
             BinaryFormat::Elf => self.elf_write(buffer),
             #[cfg(feature = "macho")]
             BinaryFormat::MachO => self.macho_write(buffer),
+            #[cfg(feature = "xcoff")]
+            BinaryFormat::Xcoff => self.xcoff_write(buffer),
             _ => unimplemented!(),
         }
     }

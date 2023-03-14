@@ -6,6 +6,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, RelocationEncoding, RelocationKind, SectionKind,
     SymbolFlags, SymbolKind, SymbolScope, SymbolSection,
 };
+use std::io::Write;
 
 mod bss;
 mod coff;
@@ -448,4 +449,50 @@ fn macho_x86_64() {
     assert_eq!(symbol.address(), func1_offset);
     assert_eq!(symbol.name(), "_func1");
     assert_eq!(map.get(func1_offset - 1), None);
+}
+
+#[cfg(feature = "xcoff")]
+#[test]
+fn xcoff_powerpc() {
+    let mut object = write::Object::new(
+        BinaryFormat::Xcoff,
+        Architecture::PowerPc64,
+        Endianness::Big,
+    );
+    object.add_file_symbol(b".file".to_vec());
+    let csect = object.add_section(
+        Vec::new(),
+        b"rust_metadata_abcdef".to_vec(),
+        SectionKind::Data,
+    );
+    let symbol = object.add_symbol(write::Symbol {
+        name: "rust_metadata_abcdef".into(),
+        value: 0,
+        size: 0,
+        kind: object::SymbolKind::Data,
+        scope: object::SymbolScope::Dynamic,
+        weak: true,
+        section: write::SymbolSection::Section(csect),
+        flags: object::SymbolFlags::None,
+    });
+    let metadata = object.add_section(
+        Vec::new(),
+        b"__aix_rust_metadata".to_vec(),
+        SectionKind::OtherString,
+    );
+    object.append_section_data(metadata, &[0u8; 1024], 1);
+    let metadata_ref = object.add_symbol(write::Symbol {
+        name: "__aix_rust_metadata".into(),
+        value: 0,
+        size: 1024,
+        kind: object::SymbolKind::Null,
+        scope: object::SymbolScope::Dynamic,
+        weak: true,
+        section: write::SymbolSection::Section(csect),
+        flags: object::SymbolFlags::None,
+    });
+    let bytes = object.write().unwrap();
+    // let mut f = std::fs::File::create("/tmp/sample.xcoff").unwrap();
+    // f.write_all(&bytes);
+    let object = read::File::parse(&*bytes).unwrap();
 }
