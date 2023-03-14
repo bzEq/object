@@ -459,7 +459,6 @@ fn xcoff_powerpc() {
         Architecture::PowerPc64,
         Endianness::Big,
     );
-    object.add_file_symbol(b".file".to_vec());
     object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     let data = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
     object.add_symbol(write::Symbol {

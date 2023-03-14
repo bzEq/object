@@ -69,6 +69,7 @@ impl<'a> XcoffObjectWriter<'a> {
         }
         self.symbol_table_file_offset = object_file_offset;
         for (_, symbol) in self.object.symbols.iter().enumerate() {
+            self.string_table.add(&symbol.name);
             self.num_symbol_table_entry += match symbol.kind {
                 SymbolKind::Section => 2,
                 _ => 1,
@@ -77,7 +78,9 @@ impl<'a> XcoffObjectWriter<'a> {
         object_file_offset += (symbol_size * self.num_symbol_table_entry) as u64;
         self.finalize_string_table();
         object_file_offset += self.string_table_data.len() as u64;
-        //debug_assert_eq!(object_file_offset, 0);
+        self.buffer
+            .reserve(object_file_offset as usize)
+            .map_err(|_| Error(String::from("Cannot allocate buffer")))?;
         return Ok(());
     }
 
