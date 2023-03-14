@@ -177,6 +177,10 @@ impl<'a> XcoffObjectWriter<'a> {
         }
         object_file_offset += symbol_size * self.num_symbol_table_entry;
         self.finalize_string_table();
+        object_file_offset += self.string_table_data.len();
+        self.buffer
+            .reserve(object_file_offset)
+            .map_err(|_| Error(String::from("Cannot allocate buffer")))?;
         return Ok(());
     }
 
