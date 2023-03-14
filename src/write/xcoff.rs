@@ -26,7 +26,7 @@ struct XcoffObjectWriter<'a> {
     csect_address: HashMap<SectionId, u64>,
     // C_INFO symbol's offset in .info section.
     info_symbol_offset: HashMap<SymbolId, usize>,
-    filenames: Vec<&'a Vec<u8>>,
+    filenames: Vec<SymbolId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -140,12 +140,12 @@ impl<'a> XcoffObjectWriter<'a> {
         self.symbol_table_file_offset = object_file_offset;
         let mut info_symbol_offset = 0;
         for (index, symbol) in self.object.symbols.iter().enumerate() {
+            let symbol_id = SymbolId(index);
             self.string_table.add(&symbol.name);
             if symbol.kind == SymbolKind::File {
-                self.filenames.push(&symbol.name);
+                self.filenames.push(symbol_id);
                 continue;
             }
-            let symbol_id = SymbolId(index);
             match symbol.section {
                 SymbolSection::Section(id) => {
                     let index = match symbol.kind {
