@@ -139,35 +139,34 @@ impl<'a> XcoffObjectWriter<'a> {
         // data stored in XCOFF's .info section.
         self.symbol_table_file_offset = object_file_offset;
         let mut info_symbol_offset = 0;
-        for (_, symbol) in self.object.symbols.iter().enumerate() {
+        for (index, symbol) in self.object.symbols.iter().enumerate() {
             self.string_table.add(&symbol.name);
             if symbol.kind == SymbolKind::File {
                 self.filenames.push(&symbol.name);
                 continue;
             }
+            let symbol_id = SymbolId(index);
             match symbol.section {
                 SymbolSection::Section(id) => {
-                    if let Some(symbol_id) = self.object.symbol_id(&symbol.name) {
-                        let index = match symbol.kind {
-                            SymbolKind::Text => XcoffSectionIndex::Text,
-                            SymbolKind::Data => XcoffSectionIndex::Data,
-                            _ => XcoffSectionIndex::Info,
-                        };
-                        if index == XcoffSectionIndex::Info {
-                            // For C_INFO symbol's data, it's prefixed with a word indicating
-                            // the data's length. However the data the symbol points
-                            // to starts after the word.
-                            self.info_symbol_offset
-                                .insert(symbol_id, info_symbol_offset + 4);
-                            info_symbol_offset += 4 + symbol.size as usize;
-                            // C_INFO symbol doesn't have auxiliary entry.
-                            self.num_symbol_table_entry += 1;
-                        } else {
-                            // Other symbol has one extra auxiliary entry.
-                            self.num_symbol_table_entry += 2;
-                        }
-                        self.symbol_section.push((symbol_id, index));
+                    let index = match symbol.kind {
+                        SymbolKind::Text => XcoffSectionIndex::Text,
+                        SymbolKind::Data => XcoffSectionIndex::Data,
+                        _ => XcoffSectionIndex::Info,
+                    };
+                    if index == XcoffSectionIndex::Info {
+                        // For C_INFO symbol's data, it's prefixed with a word indicating
+                        // the data's length. However the data the symbol points
+                        // to starts after the word.
+                        self.info_symbol_offset
+                            .insert(symbol_id, info_symbol_offset + 4);
+                        info_symbol_offset += 4 + symbol.size as usize;
+                        // C_INFO symbol doesn't have auxiliary entry.
+                        self.num_symbol_table_entry += 1;
+                    } else {
+                        // Other symbol has one extra auxiliary entry.
+                        self.num_symbol_table_entry += 2;
                     }
+                    self.symbol_section.push((symbol_id, index));
                 }
                 _ => {}
             }
