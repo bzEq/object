@@ -465,7 +465,7 @@ fn xcoff_powerpc() {
         b"rust_metadata_abcdef".to_vec(),
         SectionKind::Data,
     );
-    let symbol = object.add_symbol(write::Symbol {
+    object.add_symbol(write::Symbol {
         name: "rust_metadata_abcdef".into(),
         value: 0,
         size: 0,
@@ -475,13 +475,13 @@ fn xcoff_powerpc() {
         section: write::SymbolSection::Section(csect),
         flags: object::SymbolFlags::None,
     });
-    let metadata = object.add_section(
+    let csect = object.add_section(
         Vec::new(),
         b"__aix_rust_metadata".to_vec(),
         SectionKind::OtherString,
     );
-    object.append_section_data(metadata, &[0u8; 1024], 1);
-    let metadata_ref = object.add_symbol(write::Symbol {
+    object.append_section_data(csect, &[0u8; 1024], 1);
+    object.add_symbol(write::Symbol {
         name: "__aix_rust_metadata".into(),
         value: 0,
         size: 1024,
