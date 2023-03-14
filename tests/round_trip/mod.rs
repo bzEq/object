@@ -492,7 +492,7 @@ fn xcoff_powerpc() {
         flags: object::SymbolFlags::None,
     });
     let bytes = object.write().unwrap();
-    let mut f = std::fs::File::create("/tmp/sample.xcoff").unwrap();
-    f.write_all(&bytes);
+    // let mut f = std::fs::File::create("/tmp/sample.xcoff").unwrap();
+    // f.write_all(&bytes);
     let object = read::File::parse(&*bytes).unwrap();
 }
