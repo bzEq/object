@@ -71,7 +71,7 @@ impl<'a> XcoffObjectWriter<'a> {
         for (_, symbol) in self.object.symbols.iter().enumerate() {
             self.string_table.add(&symbol.name);
             self.num_symbol_table_entry += match symbol.kind {
-                SymbolKind::Section => 2,
+                SymbolKind::Text | SymbolKind::Data | SymbolKind::Tls | SymbolKind::Section => 2,
                 _ => 1,
             };
         }
@@ -159,7 +159,7 @@ impl<'a> XcoffObjectWriter<'a> {
             if let SymbolSection::Section(section_id) = symbol.section {
                 let section = self.object.section(section_id);
                 let (n_sclass, n_numaux, x_smtyp, x_smclas) = match symbol.kind {
-                    SymbolKind::Section => {
+                    SymbolKind::Text | SymbolKind::Data | SymbolKind::Tls | SymbolKind::Section => {
                         let sc = if symbol.weak {
                             xcoff::C_WEAKEXT
                         } else if symbol.is_undefined() {
