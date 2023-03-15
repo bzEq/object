@@ -156,64 +156,66 @@ impl<'a> XcoffObjectWriter<'a> {
             let n_offset =
                 self.string_table
                     .get_offset(self.string_table.get_id(&symbol.name)) as u32;
-            if let SymbolSection::Section(section_id) = symbol.section {
-                let section = self.object.section(section_id);
-                let (n_sclass, n_numaux, x_smtyp, x_smclas) = match symbol.kind {
-                    SymbolKind::Text | SymbolKind::Data | SymbolKind::Tls | SymbolKind::Section => {
-                        let sc = if symbol.weak {
-                            xcoff::C_WEAKEXT
-                        } else if symbol.is_undefined() {
-                            xcoff::C_HIDEXT
-                        } else {
-                            xcoff::C_EXT
-                        };
-                        let smt = xcoff::XTY_SD;
-                        let smc = if section.kind == SectionKind::Data {
-                            xcoff::XMC_RW
-                        } else {
-                            xcoff::XMC_PR
-                        };
-                        (sc, 1, smt, smc)
-                    }
-                    SymbolKind::File => (xcoff::C_FILE, 0, 0, 0),
-                    _ => (xcoff::C_INFO, 0, 0, 0),
-                };
-                let symbol_entry = xcoff::Symbol64 {
-                    n_value: U64::new(BE, symbol.value),
-                    n_offset: U32::new(BE, n_offset),
-                    n_scnum: I16::new(BE, (section_id.0 + 1) as i16),
-                    n_type: U16::new(BE, 0),
-                    n_sclass: n_sclass,
-                    n_numaux: n_numaux,
-                };
-                self.buffer.write(&symbol_entry);
-                match n_numaux {
-                    0 => {}
-                    1 => {
-                        let csect = xcoff::CsectAux64 {
-                            x_scnlen_lo: U32::new(BE, symbol.size as u32),
-                            x_scnlen_hi: U32::new(BE, (symbol.size >> 32) as u32),
-                            x_snhash: U16::new(BE, 0),
-                            x_parmhash: U32::new(BE, 0),
-                            x_smtyp: x_smtyp,
-                            x_smclas: x_smclas,
-                            pad: 0,
-                            x_auxtype: xcoff::AUX_CSECT,
-                        };
-                        self.buffer.write(&csect);
-                    }
-                    _ => {
-                        return Err(Error(format!(
-                            "Unexpected number of auxiliary entries: {}",
-                            n_numaux
-                        )));
-                    }
+            let n_scnum = match symbol.section {
+                SymbolSection::Section(section_id) => (section_id.0 + 1) as i16,
+                SymbolSection::None => {
+                    debug_assert_eq!(symbol.kind, SymbolKind::File);
+                    xcoff::N_DEBUG
                 }
-            } else {
-                return Err(Error(format!(
-                    "Unable to handle symbol {:?} which doesn't belong to any section",
-                    symbol
-                )));
+                SymbolSection::Undefined => xcoff::N_UNDEF,
+                SymbolSection::Absolute => xcoff::N_ABS,
+                SymbolSection::Common => xcoff::N_UNDEF,
+            };
+            let (n_sclass, n_numaux, x_smtyp, x_smclas) = match symbol.kind {
+                SymbolKind::Text | SymbolKind::Data | SymbolKind::Tls | SymbolKind::Section => {
+                    let sc = if symbol.weak {
+                        xcoff::C_WEAKEXT
+                    } else if symbol.is_undefined() {
+                        xcoff::C_HIDEXT
+                    } else {
+                        xcoff::C_EXT
+                    };
+                    let smt = xcoff::XTY_SD;
+                    let smc = if symbol.kind == SymbolKind::Data {
+                        xcoff::XMC_RW
+                    } else {
+                        xcoff::XMC_PR
+                    };
+                    (sc, 1, smt, smc)
+                }
+                SymbolKind::File => (xcoff::C_FILE, 0, 0, 0),
+                _ => (xcoff::C_INFO, 0, 0, 0),
+            };
+            let symbol_entry = xcoff::Symbol64 {
+                n_value: U64::new(BE, symbol.value),
+                n_offset: U32::new(BE, n_offset),
+                n_scnum: I16::new(BE, n_scnum),
+                n_type: U16::new(BE, 0),
+                n_sclass: n_sclass,
+                n_numaux: n_numaux,
+            };
+            self.buffer.write(&symbol_entry);
+            match n_numaux {
+                0 => {}
+                1 => {
+                    let csect = xcoff::CsectAux64 {
+                        x_scnlen_lo: U32::new(BE, symbol.size as u32),
+                        x_scnlen_hi: U32::new(BE, (symbol.size >> 32) as u32),
+                        x_snhash: U16::new(BE, 0),
+                        x_parmhash: U32::new(BE, 0),
+                        x_smtyp: x_smtyp,
+                        x_smclas: x_smclas,
+                        pad: 0,
+                        x_auxtype: xcoff::AUX_CSECT,
+                    };
+                    self.buffer.write(&csect);
+                }
+                _ => {
+                    return Err(Error(format!(
+                        "Unexpected number of auxiliary entries: {}",
+                        n_numaux
+                    )));
+                }
             }
         }
         return Ok(());
