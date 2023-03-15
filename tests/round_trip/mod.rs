@@ -459,32 +459,32 @@ fn xcoff_powerpc() {
         Architecture::PowerPc64,
         Endianness::Big,
     );
+    let info = object.add_section(Vec::new(), b".info".to_vec(), SectionKind::OtherString);
+    object.append_section_data(info, &[0u8; 1024], 1);
     object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     let data = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
     object.add_symbol(write::Symbol {
         name: "rust_metadata_abcdef".into(),
         value: 0,
         size: 0,
-        kind: object::SymbolKind::Section,
+        kind: object::SymbolKind::Data,
         scope: object::SymbolScope::Dynamic,
-        weak: true,
+        weak: false,
         section: write::SymbolSection::Section(data),
         flags: object::SymbolFlags::None,
     });
-    let info = object.add_section(Vec::new(), b".info".to_vec(), SectionKind::OtherString);
-    object.append_section_data(info, &[0u8; 1024], 1);
     object.add_symbol(write::Symbol {
         name: "__aix_rust_metadata".into(),
         value: 4,
         size: 0,
         kind: object::SymbolKind::Null,
         scope: object::SymbolScope::Dynamic,
-        weak: true,
+        weak: false,
         section: write::SymbolSection::Section(info),
         flags: object::SymbolFlags::None,
     });
     let bytes = object.write().unwrap();
-    // let mut f = std::fs::File::create("/tmp/sample.xcoff").unwrap();
-    // f.write_all(&bytes);
+    let mut f = std::fs::File::create("/tmp/sample.xcoff").unwrap();
+    f.write_all(&bytes);
     let object = read::File::parse(&*bytes).unwrap();
 }

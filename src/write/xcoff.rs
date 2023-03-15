@@ -186,8 +186,23 @@ impl<'a> XcoffObjectWriter<'a> {
                 SymbolKind::File => (xcoff::C_FILE, 0, 0, 0),
                 _ => (xcoff::C_INFO, 0, 0, 0),
             };
+            let n_value = match n_sclass {
+                xcoff::C_WEAKEXT
+                | xcoff::C_HIDEXT
+                | xcoff::C_EXT
+                | xcoff::C_FCN
+                | xcoff::C_BLOCK
+                | xcoff::C_STAT => {
+                    if n_scnum > 0 {
+                        self.section_address[(n_scnum - 1) as usize] + symbol.value
+                    } else {
+                        symbol.value
+                    }
+                }
+                _ => symbol.value,
+            };
             let symbol_entry = xcoff::Symbol64 {
-                n_value: U64::new(BE, symbol.value),
+                n_value: U64::new(BE, n_value),
                 n_offset: U32::new(BE, n_offset),
                 n_scnum: I16::new(BE, n_scnum),
                 n_type: U16::new(BE, 0),
