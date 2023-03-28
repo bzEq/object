@@ -73,8 +73,8 @@
 #[cfg(feature = "cargo-all")]
 compile_error!("'--all-features' is not supported; use '--features all' instead");
 
-#[cfg(all(feature = "xcoff", not(feature = "unstable")))]
-compile_error!("'xcoff` is an unstable feature; enable 'unstable' as well");
+//#[cfg(all(feature = "xcoff", not(feature = "unstable")))]
+//compile_error!("'xcoff` is an unstable feature; enable 'unstable' as well");
 
 #[cfg(any(feature = "read_core", feature = "write_core"))]
 #[allow(unused_imports)]
